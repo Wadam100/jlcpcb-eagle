@@ -107,7 +107,7 @@ string get_mpn(UL_ELEMENT E)
 string get_package(UL_ELEMENT E)
 {
     E.attributes(A) {
-        if (A.name == "Package") {
+        if (A.name == "PACKAGE") {
             string val = replace_commas(A.value);
             if (strip(val) != "") {
                 return val;
