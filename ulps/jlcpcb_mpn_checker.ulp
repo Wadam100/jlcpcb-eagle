@@ -1,0 +1,183 @@
+/*
+
+JLCPCB MPN Checker ULP
+
+Shows all schematic parts with their MPN status.
+Parts with missing MPNs can be filled in directly.
+
+*/
+
+#usage "<b>JLCPCB MPN Checker</b>\n"
+       "<p>"
+       "Shows all schematic parts and their MPN attributes. "
+       "Parts with missing MPNs can be filled in directly."
+       "<p>"
+       "Select a part in the list, type the MPN below, press Set to update. "
+       "Repeat for each part. Press Apply when done."
+       "<p>"
+       "Run the ULP from the schematic editor"
+       "<p>"
+       "<author>Author: Generated for JLCPCB workflow</author>"
+
+
+string get_mpn(UL_PART P)
+{
+    P.attributes(A) {
+        if (A.name == "MPN") {
+            return A.value;
+        }
+    }
+    return "";
+}
+
+int is_dnp(UL_PART P)
+{
+    P.attributes(A) {
+        if (A.name == "DNP") {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+string strip(string s)
+{
+    while (s && isspace(s[0])) {
+        s = strsub(s, 1);
+    }
+    while (s && isspace(s[strlen(s) - 1])) {
+        s = strsub(s, 0, strlen(s) - 1);
+    }
+    return s;
+}
+
+if (schematic) schematic(S) {
+
+    int count = 0;
+    int missing = 0;
+    string names[];
+    string vals[];
+    string mpns[];
+    string orig_mpns[];
+    int sheets[];
+
+    // Gather all parts with a package (skip frames, power symbols, test points)
+    S.parts(P) {
+        if (P.device.package && strsub(P.name, 0, 2) != "TP" && !is_dnp(P)) {
+            names[count] = P.name;
+            vals[count] = P.value;
+            mpns[count] = strip(get_mpn(P));
+            orig_mpns[count] = mpns[count];
+            // Find which sheet this part's first instance is on
+            int sheet_num = 1;
+            P.instances(I) {
+                sheet_num = I.sheet;
+                break;
+            }
+            sheets[count] = sheet_num;
+            if (mpns[count] == "") {
+                missing++;
+            }
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        dlgMessageBox("No parts found in schematic.", "OK");
+        exit(0);
+    }
+
+    // Sort by designator
+    int idx[];
+    for (int si = 0; si < count; si++) {
+        idx[si] = si;
+    }
+    sort(count, idx, names);
+
+    // Build sorted arrays and list view entries
+    string snames[];
+    string svals[];
+    string smpns[];
+    string sorig[];
+    int ssheets[];
+    string list[];
+    for (int r = 0; r < count; r++) {
+        snames[r] = names[idx[r]];
+        svals[r] = vals[idx[r]];
+        smpns[r] = mpns[idx[r]];
+        sorig[r] = orig_mpns[idx[r]];
+        ssheets[r] = sheets[idx[r]];
+        string line;
+        sprintf(line, "%s\t%s\t%s", snames[r], svals[r], smpns[r]);
+        list[r] = line;
+    }
+
+    string dlg_title;
+    sprintf(dlg_title, "MPN Checker - %s", strsub(filename(S.name), 0, strlen(filename(S.name)) - 4));
+    string count_label;
+    sprintf(count_label, "%d part(s), %d missing MPN:", count, missing);
+
+    int sel = 0;
+    string edit_mpn = smpns[0];
+
+    int result = dlgDialog(dlg_title) {
+        dlgLabel(count_label);
+        dlgHBoxLayout {
+            dlgSpacing(600);
+        }
+        dlgVBoxLayout {
+            dlgListView("Designator\tValue\tMPN", list, sel) {
+                edit_mpn = smpns[sel];
+                dlgRedisplay();
+            }
+        }
+        dlgHBoxLayout {
+            dlgLabel("MPN:");
+            dlgStringEdit(edit_mpn);
+            dlgPushButton("Set") {
+                smpns[sel] = edit_mpn;
+                sprintf(list[sel], "%s\t%s\t%s", snames[sel], svals[sel], smpns[sel]);
+                dlgRedisplay();
+            }
+        }
+        dlgHBoxLayout {
+            dlgStretch(1);
+            dlgPushButton("+Apply") dlgAccept(1);
+            dlgPushButton("-Cancel") dlgReject(0);
+        }
+    };
+
+    if (result == 1) {
+        // Write SCR file with ATTRIBUTE commands
+        string scr_path = filedir(S.name) + "mpn_update.scr";
+        int applied = 0;
+
+        output(scr_path, "wt") {
+            int last_sheet = -1;
+            for (int j = 0; j < count; j++) {
+                string mpn_val = strip(smpns[j]);
+                if (mpn_val != "" && mpn_val != sorig[j]) {
+                    // Switch to the correct sheet if needed
+                    if (ssheets[j] != last_sheet) {
+                        printf("EDIT .s%d;\n", ssheets[j]);
+                        last_sheet = ssheets[j];
+                    }
+                    printf("ATTRIBUTE %s MPN '%s';\n", snames[j], mpn_val);
+                    applied++;
+                }
+            }
+        }
+
+        if (applied > 0) {
+            string run_cmd;
+            sprintf(run_cmd, "SCRIPT '%s';", scr_path);
+            exit(run_cmd);
+        } else {
+            dlgMessageBox("No MPN changes to apply.", "OK");
+        }
+    }
+
+} else {
+    dlgMessageBox("Run this ULP from a Schematic", "OK");
+    exit(0);
+}

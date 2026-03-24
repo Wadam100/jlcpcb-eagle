@@ -104,6 +104,19 @@ string get_mpn(UL_ELEMENT E)
     return "";
 }
 
+string get_package(UL_ELEMENT E)
+{
+    E.attributes(A) {
+        if (A.name == "Package") {
+            string val = replace_commas(A.value);
+            if (strip(val) != "") {
+                return val;
+            }
+        }
+    }
+    return replace_commas(E.footprint.name);
+}
+
 int is_dnp(UL_ELEMENT E)
 {
     E.attributes(A) {
@@ -175,7 +188,7 @@ if (board) board(B) {
         for (i=0 ; i < element_count ; ++i) {
             indexes[i] = i;
             mpns[i] = get_mpn(selected_elements[i]);
-            footprints[i] = selected_elements[i].footprint.name;
+            footprints[i] = get_package(selected_elements[i]);
         }
         sort(element_count, indexes, mpns, footprints);
 
@@ -190,16 +203,16 @@ if (board) board(B) {
 
             if (strip(mpn) == "") {
                 // Elements with no MPN aren't aggregated
-                printf("%s,%s,%s,%s\n", "", replace_commas(E.name), replace_commas(E.footprint.name), lcsc_part);
+                printf("%s,%s,%s,%s\n", "", replace_commas(E.name), get_package(E), lcsc_part);
                 designators = "";
             } else if (i < element_count - 1
                     && mpn == get_mpn(selected_elements[indexes[i + 1]])
-                    && E.footprint.name == selected_elements[indexes[i + 1]].footprint.name) {
+                    && get_package(E) == get_package(selected_elements[indexes[i + 1]])) {
                 // Split elements that have different MPN or package
                 designators += " " + replace_commas(E.name);
             } else {
                 designators += " " + replace_commas(E.name);
-                printf("%s,%s,%s,%s\n", mpn, strip(designators), replace_commas(E.footprint.name), lcsc_part);
+                printf("%s,%s,%s,%s\n", mpn, strip(designators), get_package(E), lcsc_part);
                 designators = "";
             }
         }
